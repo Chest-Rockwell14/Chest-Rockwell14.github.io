@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2D Craps Game</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 10px;
+        }
+        canvas {
+            border: 2px solid black;
+            background-color: #006400; /* Default green felt */
+        }
+        #controls, #settings, #stats {
+            margin: 10px;
+            text-align: center;
+        }
+        button {
+            padding: 10px;
+            margin: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        select, input[type="checkbox"] {
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="crapsCanvas" width="600" height="400"></canvas>
+    <div id="controls">
+        <div id="status">Place your bets!</div>
+        <div id="balance">Chips: 10000</div>
+        <button onclick="placeBet('PassLine', 100)">Bet $100 on Pass Line</button>
+        <button onclick="placeBet('DontPass', 100)">Bet $100 on Don't Pass</button>
+        <button onclick="rollDice()">Roll Dice</button>
+    </div>
+    <div id="settings">
+        <label>Table Color: 
+            <select id="tableColor" onchange="updateSettings()">
+                <option value="#006400">Green</option>
+                <option value="#00008B">Blue</option>
+                <option value="#8B0000">Red</option>
+            </select>
+        </label>
+        <label>Sound: <input type="checkbox" id="soundToggle" checked onchange="updateSettings()"></label>
+        <label>Bet Limit: 
+            <select id="betLimit" onchange="updateSettings()">
+                <option value="1000">Max $1000</option>
+                <option value="500">Max $500</option>
+                <option value="100">Max $100</option>
+            </select>
+        </label>
+    </div>
+    <div id="stats">
+        <button onclick="showStats()">Show Stats</button>
+        <div id="statsDisplay"></div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('crapsCanvas');
+        const ctx = canvas.getContext('2d');
+        let chipBalance = parseInt(localStorage.getItem('chipBalance')) || 10000;
+        let point = 0;
+        let bets = {};
+        let rollHistory = JSON.parse(localStorage.getItem('rollHistory')) || [];
+        let settings = JSON.parse(localStorage.getItem('settings')) || {
+            tableColor: '#006400',
+            soundEnabled: true,
+            betLimit: 1000
+        };
+
+        // Initialize UI
+        document.getElementById('balance').textContent = `Chips: ${chipBalance}`;
+        document.getElementById('tableColor').value = settings.tableColor;
+        document.getElementById('soundToggle').checked = settings.soundEnabled;
+        document.getElementById('betLimit').value = settings.betLimit;
+        canvas.style.backgroundColor = settings.tableColor;
+
+        // Draw 2D table and dice
+        function drawTable() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // Draw betting areas (simplified)
+            ctx.fillStyle = '#FFD700';
+            ctx.fillRect(50, 50, 100, 50); // Pass Line
+            ctx.fillRect(50, 150, 100, 50); // Don't Pass
+            ctx.fillStyle = 'black';
+            ctx.font = '20px Arial';
+            ctx.fillText('Pass Line', 60, 80);
+            ctx.fillText("Don't Pass", 60, 180);
+
+            // Draw dice (simplified as numbers)
+            if (lastRoll) {
+                ctx.fillStyle = 'white';
+                ctx.fillRect(300, 100, 100, 100);
+                ctx.fillStyle = 'black';
+                ctx.font = '30px Arial';
+                ctx.fillText(`Dice: ${lastRoll[0]} + ${lastRoll[1]} = ${lastRoll[0] + lastRoll[1]}`, 310, 150);
+            }
+        }
+
+        let lastRoll = null;
+        drawTable();
+
+        function playSound() {
+            if (settings.soundEnabled) {
+                // Simulate sound (in a real app, use Audio API)
+                console.log('Dice roll sound!');
+            }
+        }
+
+        function updateSettings() {
+            settings.tableColor = document.getElementById('tableColor').value;
+            settings.soundEnabled = document.getElementById('soundToggle').checked;
+            settings.betLimit = parseInt(document.getElementById('betLimit').value);
+            localStorage.setItem('settings', JSON.stringify(settings));
+            canvas.style.backgroundColor = settings.tableColor;
+            drawTable();
+        }
+
+        function placeBet(betType, amount) {
+            if (chipBalance >= amount && amount <= settings.betLimit) {
+                chipBalance -= amount;
+                bets[betType] = (bets[betType] || 0) + amount;
+                document.getElementById('balance').textContent = `Chips: ${chipBalance}`;
+                document.getElementById('status').textContent = `Placed $${amount} on ${betType}`;
+                localStorage.setItem('chipBalance', chipBalance);
+            } else {
+                document.getElementById('status').textContent = 'Invalid bet!';
+            }
+            drawTable();
+        }
+
+        function rollDice() {
+            playSound();
+            const dice1 = Math.floor(Math.random() * 6) + 1;
+            const dice2 = Math.floor(Math.random() * 6) + 1;
+            const rollSum = dice1 + dice2;
+            lastRoll = [dice1, dice2];
+            rollHistory.push(rollSum);
+            localStorage.setItem('rollHistory', JSON.stringify(rollHistory));
+            drawTable();
+            processRoll(rollSum);
+        }
+
+        function processRoll(rollSum) {
+            let status = `Rolled: ${rollSum}`;
+            if (point === 0) { // Come-Out Roll
+                if (rollSum === 7 || rollSum === 11) {
+                    if (bets['PassLine']) {
+                        chipBalance += bets['PassLine'] * 2; // 1:1 payout
+                        status += '\nPass Line wins!';
+                        bets = {};
+                    }
+                } else if (rollSum === 2 || rollSum === 3 || rollSum === 12) {
+                    if (bets['DontPass']) {
+                        chipBalance += bets['DontPass'] * 2; // 1:1 payout
+                        status += "\nDon't Pass wins!";
+                        bets = {};
+                    }
+                } else {
+                    point = rollSum;
+                    status += `\nPoint is ${point}`;
+                }
+            } else { // Point Roll
+                if (rollSum === point) {
+                    if (bets['PassLine']) {
+                        chipBalance += bets['PassLine'] * 2; // 1:1 payout
+                        status += '\nPass Line wins!';
+                        point = 0;
+                        bets = {};
+                    }
+                } else if (rollSum === 7) {
+                    if (bets['DontPass']) {
+                        chipBalance += bets['DontPass'] * 2; // Ascending...
+                        status += "\nDon't Pass wins!";
+                        point = 0;
+                        bets = {};
+                    }
+                }
+            }
+
+            document.getElementById('status').textContent = status;
+            document.getElementById('balance').textContent = `Chips: ${chipBalance}`;
+            localStorage.setItem('chipBalance', chipBalance);
+        }
+
+        function showStats() {
+            const wins = rollHistory.filter(r => (point === 0 && (r === 7 || r === 11)) || (point !== 0 && r === point)).length;
+            const losses = rollHistory.filter(r => (point === 0 && (r === 2 || r === 3 || r === 12)) || (point !== 0 && r === 7)).length;
+            document.getElementById('statsDisplay').textContent = `Rolls: ${rollHistory.length}, Wins: ${wins}, Losses: ${losses}, History: ${rollHistory.join(', ')}`;
+        }
+    </script>
+</body>
+</html>
